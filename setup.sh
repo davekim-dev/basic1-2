@@ -125,13 +125,15 @@ docker exec "$CONTAINER_NAME" bash -c "
 # 컨테이너 아키텍처 확인 후 맞는 바이너리 선택
 CONTAINER_ARCH=$(docker exec "$CONTAINER_NAME" uname -m)
 if [ "$CONTAINER_ARCH" = "aarch64" ]; then
-  BINARY_NAME="agent-app-linux-arm64"
+  SRC_BINARY_NAME="agent-leak-app-arm64"
+  BINARY_NAME="agent-leak-app-arm64"
 else
-  BINARY_NAME="agent-app-linux-x86"
+  SRC_BINARY_NAME="agent-leak-app-x86"
+  BINARY_NAME="agent-leak-app-x86"
 fi
-echo ">>> 컨테이너 아키텍처: $CONTAINER_ARCH → $BINARY_NAME 복사"
+echo ">>> 컨테이너 아키텍처: $CONTAINER_ARCH → $SRC_BINARY_NAME 복사"
 
-docker cp "$AGENT_APP_SRC/$BINARY_NAME" "$CONTAINER_NAME:/home/agent-admin/agent-app/$BINARY_NAME"
+docker cp "$AGENT_APP_SRC/$SRC_BINARY_NAME" "$CONTAINER_NAME:/home/agent-admin/agent-app/$BINARY_NAME"
 
 docker exec "$CONTAINER_NAME" bash -c "
   chown agent-admin:agent-admin /home/agent-admin/agent-app/$BINARY_NAME &&
