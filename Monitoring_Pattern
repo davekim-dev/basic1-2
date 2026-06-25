@@ -1,0 +1,65 @@
+#!/bin/bash
+
+# ─────────────────────────────────────────
+# 환경변수에서 숫자만 추출 (단위 제거)
+# CPU_MAX_OCCUPY=50%  → 50
+# MEMORY_LIMIT=256MB  → 256 (MB 단위)
+# ─────────────────────────────────────────
+CPU_THRESHOLD=${CPU_MAX_OCCUPY//%/}          # "50%"  → "50"
+MEM_THRESHOLD=${MEMORY_LIMIT//MB/}          # "256MB" → "256"
+MEM_THRESHOLD_KB=$(( MEM_THRESHOLD * 1024 )) # MB → KB (RSS 단위 맞춤)
+
+PREV_RSS=0
+PREV_LOG_TIME=0
+
+while true; do
+    PID=$(pgrep -f agent-leak-app-x86)
+
+    # ── 프로세스 없으면 평상시 간격 유지
+    if [ -z "$PID" ]; then
+        sleep 60
+        continue
+    fi
+
+    # ── 현재 지표 수집
+    CPU=$(ps -p $PID -o %cpu= 2>/dev/null | tr -d ' ')
+    RSS=$(ps -p $PID -o rss=  2>/dev/null | tr -d ' ')  # KB 단위
+    CURR_LOG_TIME=$(stat -c %Y $AGENT_LOG_DIR/agent_app.log 2>/dev/null)
+
+    ANOMALY=false
+    REASON=""
+
+    # ── ① Memory Leak 감지
+    # RSS가 임계값(MEMORY_LIMIT) 초과
+    if [ -n "$RSS" ] && [ "$RSS" -gt "$MEM_THRESHOLD_KB" ]; then
+        ANOMALY=true
+        REASON="Memory Leak 의심 (RSS:$(( RSS / 1024 ))MB >= ${MEM_THRESHOLD}MB)"
+    fi
+
+    # ── ② CPU 과점유 감지
+    # CPU가 임계값(CPU_MAX_OCCUPY) 초과
+    if [ -n "$CPU" ] && [ $(echo "$CPU > $CPU_THRESHOLD" | bc) -eq 1 ]; then
+        ANOMALY=true
+        REASON="CPU 과점유 의심 (CPU:${CPU}% >= ${CPU_THRESHOLD}%)"
+    fi
+
+    # ── ③ Deadlock 감지
+    # CPU 0% + 프로세스 살아있음 + 앱 로그 변화 없음
+    if [ "$CURR_LOG_TIME" = "$PREV_LOG_TIME" ] && \
+       [ $(echo "$CPU == 0" | bc) -eq 1 ] && \
+       kill -0 $PID 2>/dev/null; then
+        ANOMALY=true
+        REASON="Deadlock 의심 (CPU:0%, 로그 변화 없음, PID:$PID 생존 중)"
+    fi
+
+    # ── 적응형 간격 전환
+    if [ "$ANOMALY" = true ]; then
+        echo "[$(date '+%Y-%m-%d %H:%M:%S')] [ANOMALY] $REASON" >> $AGENT_LOG_DIR/monitor.log
+        sleep 1    # 집중 감시
+    else
+        sleep 60   # 평상시
+    fi
+
+    PREV_RSS=$RSS
+    PREV_LOG_TIME=$CURR_LOG_TIME
+done
