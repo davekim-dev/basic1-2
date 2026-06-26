@@ -1,5 +1,9 @@
 # monitor.sh 시나리오별 로그 보고서
 
+`./agent-leak-app-x86 | tee /tmp/agent-run.log`
+
+tee: 화면에 출력하면서도 파일에 저장해
+
 ## 환경 설정 기준 (`/etc/environment`)
 
 | 변수 | 값 | 비고 |
@@ -399,6 +403,13 @@ agent-ad  5669     1  0 17:33:50 ?   00:00:02 ./agent-leak-app-x86
 - PID 5669 생존 확인
 - CPU 누적 시간(`00:00:02`)이 deadlock 발생 이후 **증가하지 않음** — 스레드가 실제로 실행되지 않고 있음을 시사
 
+```bash
+agent-ad  5669     1  0 17:33:50 ?   00:00:02 ./agent-leak-app-x86
+────────  ────  ───  ─ ────────  ─   ────────  ───────────────────
+  UID     PID  PPID C  STIME   TTY    TIME      CMD
+
+-ef. : 시스템의 모든 파일 (사용자 상관X)  
+```
 ---
 
 #### CPU/MEM 변화 정체 증거
@@ -431,6 +442,7 @@ $ ps -L -p 5669 -o pid,lwp,stat,wchan,comm
 
 - 모든 스레드 `WCHAN=futex_wait` — mutex/lock 획득 대기 상태에서 멈춰있음
 
+- futex_wait:차례가 올 때까지 대기상태 (잠금: futex)
 ---
 
 #### 마지막 로그 지점 (`/tmp/agent-run.log`)
