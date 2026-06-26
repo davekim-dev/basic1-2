@@ -346,7 +346,7 @@ echo ""
 
 docker exec "$CONTAINER_NAME" \
   su - agent-admin -c "
-    cd /home/agent-admin/agent-app && nohup ./$BINARY_NAME > /tmp/agent-run.log 2>&1 &
+    cd /home/agent-admin/agent-app && : > /tmp/agent-run.log && nohup bash -c \"./$BINARY_NAME 2>&1 | tee /tmp/agent-run.log\" > /dev/null &
     echo \$! > /tmp/agent-app.pid
   "
 
