@@ -157,8 +157,8 @@ AGENT_UPLOAD_DIR=/home/agent-admin/agent-app/upload_files
 AGENT_KEY_PATH=/home/agent-admin/agent-app/api_keys
 AGENT_LOG_DIR=/var/log/agent-app
 MEMORY_LIMIT=256
-CPU_MAX_OCCUPY=10
-MULTI_THREAD_ENABLE=true
+CPU_MAX_OCCUPY=30
+MULTI_THREAD_ENABLE=false
 EOF
 
   echo '--- /etc/environment ---'
@@ -260,25 +260,25 @@ while true; do
     # ── ① Memory 사전 경고 (Heap > MEMORY_LIMIT × 80%) → 집중 감시 전환
     if [ -n "\$HEAP_MB" ] && [ "\${HEAP_MB:-0}" -gt "\$MEM_WARN_MB" ] 2>/dev/null; then
         ANOMALY=true
-        REASON="Memory 경고 (Heap:\${HEAP_MB}MB >= 경고선\${MEM_WARN_MB}MB, 한계:\${MEM_THRESHOLD:-256}MB)"
+        REASON="\${REASON:+\$REASON | }Memory 경고 (Heap:\${HEAP_MB}MB >= 경고선\${MEM_WARN_MB}MB, 한계:\${MEM_THRESHOLD:-256}MB)"
     fi
 
     # ── ② Memory Leak 감지 (Heap > MEMORY_LIMIT)
     if [ -n "\$HEAP_MB" ] && [ "\${HEAP_MB:-0}" -gt "\${MEM_THRESHOLD:-256}" ] 2>/dev/null; then
         ANOMALY=true
-        REASON="Memory Leak 의심 (Heap:\${HEAP_MB}MB >= \${MEM_THRESHOLD:-256}MB)"
+        REASON="\${REASON:+\$REASON | }Memory Leak 의심 (Heap:\${HEAP_MB}MB >= \${MEM_THRESHOLD:-256}MB)"
     fi
 
     # ── ③ CPU 사전 경고 (CPU_APP > CPU_MAX_OCCUPY × 80%) → 집중 감시 전환
     if [ -n "\$CPU_APP" ] && awk "BEGIN { exit !(\${CPU_APP:-0} > \${CPU_WARN_PCT:-80}) }" 2>/dev/null; then
         ANOMALY=true
-        REASON="CPU 경고 (CPU_APP:\${CPU_APP}% >= 경고선\${CPU_WARN_PCT}%, 한계:\${CPU_THRESHOLD:-100}%)"
+        REASON="\${REASON:+\$REASON | }CPU 경고 (CPU_APP:\${CPU_APP}% >= 경고선\${CPU_WARN_PCT}%, 한계:\${CPU_THRESHOLD:-100}%)"
     fi
 
     # ── ④ CPU 과점유 감지 (CPU_APP > CPU_MAX_OCCUPY)
     if [ -n "\$CPU_APP" ] && awk "BEGIN { exit !(\${CPU_APP:-0} > \${CPU_THRESHOLD:-100}) }" 2>/dev/null; then
         ANOMALY=true
-        REASON="CPU 과점유 의심 (CPU_APP:\${CPU_APP}% >= \${CPU_THRESHOLD}%)"
+        REASON="\${REASON:+\$REASON | }CPU 과점유 의심 (CPU_APP:\${CPU_APP}% >= \${CPU_THRESHOLD}%)"
     fi
 
     # ── ⑤ Deadlock 감지 (프로세스 생존 + 앱 로그 N사이클 연속 무변화)
@@ -289,7 +289,7 @@ while true; do
     fi
     if [ "\$DEADLOCK_COUNT" -ge 3 ]; then
         ANOMALY=true
-        REASON="Deadlock 의심 (로그 \${DEADLOCK_COUNT}회 연속 무변화, PID:\$PID 생존 중, MULTI_THREAD:\${MULTI_THREAD_ENABLE:-unknown})"
+        REASON="\${REASON:+\$REASON | }Deadlock 의심 (로그 \${DEADLOCK_COUNT}회 연속 무변화, PID:\$PID 생존 중, MULTI_THREAD:\${MULTI_THREAD_ENABLE:-unknown})"
     fi
 
     # ── 적응형 간격 전환
@@ -401,6 +401,26 @@ sleep 15
 echo ""
 echo "--- cat /var/log/agent-app/monitor.log ---"
 docker exec "$CONTAINER_NAME" cat /var/log/agent-app/monitor.log
+
+# ────────────────────────────────────────────────────
+# 16-b. monitor.sh 프로세스 종료
+# ────────────────────────────────────────────────────
+echo ""
+echo "=== [16-b] monitor.sh 프로세스 종료 ==="
+docker exec "$CONTAINER_NAME" bash -c "
+  if [ -f /tmp/monitor.pid ]; then
+    MONITOR_PID=\$(cat /tmp/monitor.pid)
+    if kill -0 \$MONITOR_PID 2>/dev/null; then
+      kill \$MONITOR_PID
+      echo '>>> monitor.sh (PID: '\$MONITOR_PID') 종료 완료'
+    else
+      echo '>>> monitor.sh (PID: '\$MONITOR_PID') 이미 종료된 상태'
+    fi
+    rm -f /tmp/monitor.pid
+  else
+    echo '>>> /tmp/monitor.pid 파일 없음 — monitor.sh가 실행 중이 아닐 수 있습니다'
+  fi
+"
 
 echo ""
 echo "================================================================"
